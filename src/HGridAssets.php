@@ -1,5 +1,5 @@
 <?php
-namespace iamhimansu\hgrid;
+namespace app\hgrid\src;
 
 use yii\web\AssetBundle;
 

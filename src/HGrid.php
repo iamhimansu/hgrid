@@ -1,6 +1,6 @@
 <?php
 
-namespace iamhimansu\hgrid;
+namespace app\hgrid\src;
 
 use Closure;
 use Yii;
@@ -178,14 +178,10 @@ JS
         if (!preg_match('/^([^:]+)(:(\w*))?(:(.*))?$/', $text, $matches)) {
             throw new InvalidConfigException('The column must be specified in the format of "attribute", "attribute:format" or "attribute:format:label"');
         }
-        $relation = null;
-        if (false !== strpos($matches[1], '.')) {
-            [$relation,] = explode('.', $matches[1]);
-        }
+        
         return Yii::createObject([
             'class' => $this->dataColumnClass ?: HGridColumn::class,
             'grid' => $this,
-            'relation' => $relation,
             'attribute' => $matches[1],
             'format' => $matches[3] ?? 'text',
             'label' => $matches[5] ?? null,

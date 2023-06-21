@@ -1,11 +1,12 @@
 <?php
 
-namespace iamhimansu\hgrid;
+namespace app\hgrid\src;
 
 use Closure;
 use yii\base\InvalidConfigException;
 use yii\db\ActiveRecord;
 use yii\grid\DataColumn;
+use yii\helpers\ArrayHelper;
 use yii\helpers\Html;
 
 class HGridColumn extends DataColumn
@@ -89,5 +90,4 @@ class HGridColumn extends DataColumn
         }
         return Html::tag('td', $content, $options);
     }
-
 }
