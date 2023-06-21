@@ -3,6 +3,7 @@
 namespace app\hgrid\src;
 
 use Closure;
+use Exception;
 use yii\base\InvalidConfigException;
 use yii\db\ActiveRecord;
 use yii\grid\DataColumn;
@@ -13,10 +14,10 @@ class HGridColumn extends DataColumn
 {
     const DEFAULT_INPUT_TYPE = 'text';
     /**
-     * @var $relation string|null
+     * @var $relation array
      * holds the relation for the given column if it is a related record
      */
-    public ?string $relation;
+    public array $relation;
 
     /**
      * @var $inputType string|null
@@ -31,6 +32,12 @@ class HGridColumn extends DataColumn
     private array $primaryKeys = [];
 
     /**
+     * @var string $formName
+     * Holds the formName of the current model
+     */
+    private string $formName;
+
+    /**
      * Renders a data cell.
      * @param mixed $model the data model being rendered
      * @param mixed $key the key associated with the data model
@@ -38,16 +45,18 @@ class HGridColumn extends DataColumn
      * @return string the rendering result
      * @throws InvalidConfigException
      */
-    public function renderDataCell($model, $key, $index, $primaryKeys = []): string
+    public function renderDataCell($model, $key, $index): string
     {
-        if (!empty($this->relation) && isset($model->getRelatedRecords()[$this->relation])) {
-            $model = $model->getRelatedRecords()[$this->relation];
-            echo "<pre>";
-            var_dump($this->relation);
-            echo "</pre>";
-            die;
-        }
         /* @var $model ActiveRecord */
+
+        $this->relation = $this->extractRelation($model, $this->attribute, $key);
+
+//        if (false !== strpos($this->attribute, '.') && $key !== 1) {
+//            echo "<pre>";
+//            var_dump($this->relation['attribute'], $this->relation['model']);
+//            echo "</pre>";
+//            die;
+//        }
         if ($this->contentOptions instanceof Closure) {
             $options = call_user_func($this->contentOptions, $model, $key, $index, $this);
         } else {
@@ -56,8 +65,8 @@ class HGridColumn extends DataColumn
 
         $content = $this->renderDataCellContent($model, $key, $index);
 
-        if ($this->attribute !== null &&
-            !in_array($this->attribute, $primaryKeys) /*disable primary key update*/) {
+        if ($this->relation['attribute'] !== null &&
+            !in_array($this->relation['attribute'], $this->relation['primaryKeys']) /*disable primary key update*/) {
             $span = Html::tag('span', $content, [
                 'class' => 'h-cell-data'
             ]);
@@ -65,7 +74,7 @@ class HGridColumn extends DataColumn
             $inputType = strtolower($this->inputType);
 
             if (!in_array(strtolower($inputType), ['textarea'], true)) {
-                $input = Html::input($this->inputType, $model->formName() . '[' . $key . '][' . $this->attribute . ']', $this->getDataCellValue($model, $key, $index), [
+                $input = Html::input($inputType, $this->relation['model']->formName() . '[' . $this->relation['uniqueId'] . '][' . $this->relation['attribute'] . ']', $this->getDataCellValue($model, $key, $index), [
                     'style' => 'display:none;',
                     'class' => 'h-cell-data-input',
                     'disabled' => 'disabled',
@@ -80,7 +89,7 @@ class HGridColumn extends DataColumn
                     'autofocus' => true,
                     'tab-index' => 0,
                     'value' => $this->getDataCellValue($model, $key, $index),
-                    'name' => $model->formName() . '[' . $key . '][' . $this->attribute . ']',
+                    'name' => $this->relation['model']->formName() . '[' . $this->relation['uniqueId'] . '][' . $this->relation['attribute'] . ']',
                 ]);
                 $input .= $this->getDataCellValue($model, $key, $index);
                 $input .= Html::endTag($inputType);
@@ -89,5 +98,58 @@ class HGridColumn extends DataColumn
             return Html::tag('td', $span . $input, $options);
         }
         return Html::tag('td', $content, $options);
+    }
+
+    protected function extractRelation($model, $attribute, $key): ?array
+    {
+        /* @var ActiveRecord $model */
+        try {
+            $explode = explode('.', $attribute);
+            $attribute = array_pop($explode);
+            if (empty($attribute)) {
+                throw new Exception("Attribute not found.");
+            }
+            $relation = implode('.', $explode);
+            $relationalModel = ArrayHelper::getValue($model, $relation);
+            /* @var ActiveRecord $relationalModel */
+            if (empty($relationalModel)) {
+                throw new Exception("Relational model not found.");
+            }
+            return [
+                'model' => ArrayHelper::getValue($model, $relation),
+                'attribute' => $attribute,
+                'primaryKeys' => $relationalModel::primaryKey(),
+                'uniqueId' => $this->getPrimaryKeys($relationalModel)[0]
+            ];
+        } catch (Exception $e) {
+            return [
+                'model' => $model,
+                'attribute' => $attribute,
+                'primaryKeys' => $model::primaryKey(),
+                'uniqueId' => $key
+            ];
+        }
+    }
+
+    /**
+     * @param $model
+     * @return array
+     * Extracts the primary keys of the model
+     */
+    protected function getPrimaryKeys($model)
+    {
+        $keys = [];
+        $pks = $model::primaryKey();
+        if (count($pks) === 1) {
+            $pk = $pks[0];
+            $keys[] = $model[$pk];
+        } else {
+            $kk = [];
+            foreach ($pks as $pk) {
+                $kk[$pk] = $model[$pk];
+            }
+            $keys[] = $kk;
+        }
+        return $keys;
     }
 }

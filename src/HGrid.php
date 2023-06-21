@@ -127,14 +127,18 @@ JS
      */
     public function renderTableRow($model, $key, $index): string
     {
-        $cells = [];
         /* @var $model ActiveRecord */
-        /* @var $column HGridColumn */
+
+        $cells = [];
 
         foreach ($this->columns as $column) {
 
+            /* @var $column HGridColumn */
+
             $column->contentOptions['class'] = 'h-cell';
-            $cells[] = $column->renderDataCell($model, $key, $index, $this->primaryKeys);
+
+            $cells[] = $column->renderDataCell($model, $key, $index);
+
         }
         if ($this->rowOptions instanceof Closure) {
             $options = call_user_func($this->rowOptions, $model, $key, $index, $this);
@@ -178,7 +182,7 @@ JS
         if (!preg_match('/^([^:]+)(:(\w*))?(:(.*))?$/', $text, $matches)) {
             throw new InvalidConfigException('The column must be specified in the format of "attribute", "attribute:format" or "attribute:format:label"');
         }
-        
+
         return Yii::createObject([
             'class' => $this->dataColumnClass ?: HGridColumn::class,
             'grid' => $this,
