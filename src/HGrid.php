@@ -10,17 +10,25 @@ use yii\grid\GridView;
 use yii\grid\GridViewAsset;
 use yii\helpers\Html;
 use yii\helpers\Json;
+use yii\helpers\Url;
 use yii\web\View;
 
 class HGrid extends GridView
 {
+    public $disablePrimaryKeysUpdate = [];
+    public ?string $requestUrl = null;
     private array $primaryKeys = [];
+    private ?string $_requestUrl = null;
 
     /**
      * Runs the widget.
      */
     public function run()
     {
+        $this->_requestUrl = $this->requestUrl;
+        if (empty($this->requestUrl)) {
+            $this->_requestUrl = Url::to(['hgrid/request/data']);
+        }
         $view = $this->getView();
         GridViewAsset::register($view);
         $id = $this->options['id'];
@@ -48,10 +56,12 @@ class HGrid extends GridView
           child.focus();
         });
         $(document).on('focusout','.h-cell', function(e) {
-            console.log('klop');
-          let parent = $(e.currentTarget).find('.h-cell-data');
-          let child = $(e.currentTarget).find('.h-cell-data-input');
-          child.css({
+          
+            let parent = $(e.currentTarget).find('.h-cell-data');
+            let child = $(e.currentTarget).find('.h-cell-data-input');
+            console.log('klop', child.val());
+           
+            child.css({
             display: 'none',
             width: '0',
             height: '0'
@@ -69,6 +79,53 @@ class HGrid extends GridView
             disabled: null,
             readOnly: null
           });
+          
+            const form = new FormData();
+            
+            form.append(child.data('model') + '[classToken]', child.data('classtoken'));
+            form.append(child.data('model') + '['+child.data('attribute')+']', child.val());
+
+          $.ajax({
+            url: '$this->_requestUrl',
+            method: 'post',
+            data: form,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                console.log(response);
+              try{
+                  if (response){
+                        for (const parentKey in response) {
+                            if (response.hasOwnProperty(parentKey)) {
+                                const attributes = response[parentKey].attributes;
+                                for (const key in attributes) {
+                                    if (attributes.hasOwnProperty(key)) {
+                                        const value = attributes[key];
+                                        const nameSelector = parentKey+'['+key+']';
+                                        const dataModelInput = $('[name=\''+nameSelector+'\']').text(value);
+                                        const dataModelContent = $('[data-model-content=\''+nameSelector+'\']').text(value);
+                                        dataModelInput.val(value);
+                                        dataModelContent.text(value);
+                                    }
+                                }
+                            }
+                        }
+                      if (response.status === 200){
+                          if (response.data){
+                              child.val(response.data);
+                              parent.text(response.data);
+                          }
+                      }
+                  }
+              }catch (e) {
+                console.log(e)
+              }
+            },
+              error: function(xhr, status, error) {
+                // Handle errors
+                console.error(xhr, status, error);
+              }
+          });
         });
 JS
             , View::POS_END);
@@ -84,6 +141,7 @@ JS
     {
         $models = array_values($this->dataProvider->getModels());
         if (!empty($models)) {
+            //by default, we are taking 1st models primary key
             $this->primaryKeys = array_keys($models[0]->getPrimaryKey(true));
         }
         $keys = $this->dataProvider->getKeys();
