@@ -5,7 +5,6 @@ namespace app\hgrid\src;
 use app\hgrid\src\helpers\Obfuscator;
 use Closure;
 use Exception;
-use Yii;
 use yii\base\InvalidConfigException;
 use yii\db\ActiveRecord;
 use yii\grid\DataColumn;
@@ -19,23 +18,21 @@ class HGridColumn extends DataColumn
      * @var $relation array
      * holds the relation for the given column if it is a related record
      */
-    public array $relation;
+    private array $_relation;
 
+    private string $_pk_separator = '__';
     /**
      * @var string|Closure|null an anonymous function or a string that is used to determine the value to display in the current column.
      */
     public $formInput = self::DEFAULT_INPUT_TYPE;
 
     /**
-     * @var array $primaryKeys
-     */
-    private array $primaryKeys = [];
-
-    /**
      * @var string $formName
      * Holds the formName of the current model
      */
     private string $formName;
+
+    private bool $_isRelational;
 
     /**
      * Renders a data cell.
@@ -44,12 +41,11 @@ class HGridColumn extends DataColumn
      * @param int $index the zero-based index of the data item among the item array returned by [[GridView::dataProvider]].
      * @return string the rendering result
      * @throws InvalidConfigException
+     * @throws Exception
      */
     public function renderDataCell($model, $key, $index): string
     {
         /* @var $model ActiveRecord */
-
-        $this->relation = $this->extractRelation($model, $this->attribute ?? $this->value, $key);
 
         if ($this->contentOptions instanceof Closure) {
             $options = call_user_func($this->contentOptions, $model, $key, $index, $this);
@@ -59,110 +55,128 @@ class HGridColumn extends DataColumn
 
         $content = $this->renderDataCellContent($model, $key, $index);
 
+        $uniqueId = $this->getUniqueId($model, $index);
+//        var_dump('Row index: '.$index.', unique id: '.$uniqueId.', formname:'. ($this->isRelational() ? $this->getRelation()['modelClass']->formName() : $model->formName()));
         //Will not be queried again and again
-        $t = $this->relation['model']::getTableSchema()->getColumn($this->relation['attribute'])->type;
+//        $t = $this->$this->getRelation()['modelClass']::getTableSchema()->getColumn($this->$this->getRelation()['attribute'])->type;
 
-        if ($this->relation['attribute'] !== null &&
-            !in_array($this->relation['attribute'], $this->relation['primaryKeys']) /*disable primary key update*/) {
+        if ($this->getRelation()['attribute'] !== null &&
+            !in_array($this->getRelation()['attribute'], $this->getRelation()['primaryKey']) /*disable primary key update*/) {
+            $formName = $this->getRelation()['formName'];
             $span = Html::tag('span', $content, [
                 'class' => 'h-cell-data',
                 'data' => [
-                    'model-content' => $this->relation['model']->formName() . '[' . $this->relation['uniqueId'] . '][' . $this->relation['attribute'] . ']'
+                    'model-content' => $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']'
                 ]
             ]);
-
-            $formInput = $this->createFormInput($model, $key, $index);
-
-            return Html::tag('td', $span . $formInput, $options);
+            return Html::tag('td', $span . $this->createFormInput($formName, $key, $index, $content, $uniqueId), $options);
         }
         return Html::tag('td', $content, $options);
     }
 
-    protected function extractRelation($model, $attribute, $key): ?array
+    protected function createFormInput($formName, $key, $index, $cellValue, $uniqueId)
     {
-        /* @var ActiveRecord $model */
-        try {
-            $explode = explode('.', $attribute);
-            $attribute = array_pop($explode);
-            if (empty($attribute)) {
-                throw new Exception('Attribute not found.');
-            }
-            $relation = implode('.', $explode);
-
-            $relationalModelData = ArrayHelper::getValue($model, $relation);
-
-            /* @var ActiveRecord $relationalModelData */
-            if (empty($relationalModelData)) {
-                throw new Exception('Relational model not found.');
-            }
-            return [
-                'model' => $relationalModelData,
-                'attribute' => $attribute,
-                'primaryKeys' => $relationalModelData::primaryKey(),
-                'uniqueId' => $this->getPrimaryKeys($relationalModelData)[0]
-            ];
-        } catch (Exception $e) {
-            return [
-                'model' => $model,
-                'attribute' => $attribute,
-                'primaryKeys' => $model::primaryKey(),
-                'uniqueId' => $key
-            ];
-        }
-    }
-
-    /**
-     * @param $model
-     * @return array
-     * Extracts the primary keys of the model
-     */
-    protected function getPrimaryKeys($model)
-    {
-        $keys = [];
-        $pks = $model::primaryKey();
-        if (count($pks) === 1) {
-            $pk = $pks[0];
-            $keys[] = $model[$pk];
-        } else {
-            $kk = [];
-            foreach ($pks as $pk) {
-                $kk[$pk] = $model[$pk];
-            }
-            $keys[] = $kk;
-        }
-        return $keys;
-    }
-
-    protected function createFormInput($model, $key, $index)
-    {
-        $cellValue = $this->getDataCellValue($model, $key, $index);
         $inputOptions = [
             'style' => 'display:none;',
             'class' => 'h-cell-data-input',
             'disabled' => 'disabled',
             'autofocus' => true,
-            'tab-index' => 0,
-            'name' => $this->relation['model']->formName() . '[' . $this->relation['uniqueId'] . '][' . $this->relation['attribute'] . ']',
+            'tabindex' => 1,
+            'name' => $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
             'data' => [
-                'attribute' => $this->relation['attribute'],
-                'model' => 'Models[' . $this->relation['model']->formName() . '][' . $this->relation['uniqueId'] . ']',
-                'classToken' => Yii::$app->getSecurity()->maskToken(get_class($this->relation['model'])),
+                'attribute' => $this->getRelation()['attribute'],
+                'model' => 'Models[' . $formName . '][' . $uniqueId . ']',
+                'classToken' => $this->getModelToken(),
             ]
         ];
 
         $formInput = strtolower($this->formInput);
+
         if (!in_array(strtolower($formInput), ['textarea'], true)) {
             $input = Html::input(
                 $formInput,
-                $this->relation['model']->formName() . '[' . $this->relation['uniqueId'] . '][' . $this->relation['attribute'] . ']',
+                $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
                 $cellValue,
                 $inputOptions
             );
         } else {
+
             $input = Html::beginTag($formInput, $inputOptions);
             $input .= $cellValue;
             $input .= Html::endTag($formInput);
         }
         return $input;
+    }
+
+    /**
+     * @return mixed|null
+     */
+    public function getModelToken()
+    {
+        return $this->getRelation()['modelToken'] ?? null;
+    }
+
+    /**
+     * @param string $modelToken
+     */
+    public function setModelToken(string $modelToken): void
+    {
+        $this->$this->getRelation()['modelToken'] = $modelToken;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isRelational(): bool
+    {
+        return $this->_isRelational;
+    }
+
+    /**
+     * @param bool $isRelational
+     */
+    public function setIsRelational(bool $isRelational): void
+    {
+        $this->_isRelational = $isRelational;
+    }
+
+    /**
+     * @param array $relation
+     * @return HGridColumn
+     */
+    public function setRelation(array $relation): HGridColumn
+    {
+        $this->_relation = $relation;
+        return $this;
+    }
+
+    /**
+     * @return array
+     */
+    public function getRelation(): array
+    {
+        return $this->_relation;
+    }
+
+    /**
+     * @throws Exception
+     */
+    private function getUniqueId($model, $index = null): string
+    {
+        /* @var ActiveRecord $model */
+        $keyValues = [];
+        if ($this->isRelational() && null !== ($relationalModel = $this->getRelation()['relation'])){
+            $model = ArrayHelper::getValue($model, $relationalModel);
+        }
+        foreach ($this->getRelation()['primaryKey'] as $keyPart) {
+            if (isset($model->$keyPart)) {
+                $keyValues[] = $model[$keyPart];
+            } else {
+//                throw new Exception('Primary key does not exist for model "' . $model->formName().'"');
+                return 'sss';
+            }
+        }
+
+        return implode($this->_pk_separator, $keyValues);
     }
 }
