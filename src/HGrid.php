@@ -1,77 +1,45 @@
 <?php
 
-namespace iamhimansu\hgrid;
+namespace app\hgrid\src;
 
 use Closure;
+use Exception;
 use Yii;
 use yii\base\InvalidConfigException;
+use yii\base\InvalidParamException;
 use yii\db\ActiveRecord;
+use yii\db\ActiveRecordInterface;
+use yii\db\BaseActiveRecord;
 use yii\grid\GridView;
 use yii\grid\GridViewAsset;
+use yii\helpers\ArrayHelper;
 use yii\helpers\Html;
 use yii\helpers\Json;
-use yii\web\View;
+use yii\helpers\Url;
 
 class HGrid extends GridView
 {
+    public $disablePrimaryKeysUpdate = [];
+    public ?string $requestUrl = null;
     private array $primaryKeys = [];
+    private ?string $_requestUrl = null;
 
     /**
      * Runs the widget.
      */
     public function run()
     {
+        $this->_requestUrl = $this->requestUrl;
+        if (empty($this->requestUrl)) {
+            $this->_requestUrl = Url::to(['hgrid/request/data']);
+        }
         $view = $this->getView();
         GridViewAsset::register($view);
+        HGridAssets::register($view);
         $id = $this->options['id'];
         $options = Json::htmlEncode(array_merge($this->getClientOptions(), ['filterOnFocusOut' => $this->filterOnFocusOut]));
         $view->registerJs("jQuery('#$id').yiiGridView($options);");
-        $view->registerJs(<<<JS
-        $(document).on('dblclick', '.h-cell', function(e) {
-          // console.log([e.currentTarget]||e.target.parent());
-          let parent = $(e.currentTarget).find('.h-cell-data');
-          let child = $(e.currentTarget).find('.h-cell-data-input');
-          parent.css({
-            display: 'none',
-            width: '0',
-            height: '0'
-          });
-          child.css({
-            display: 'revert',
-            width: '100%',
-            height: '100%'
-          });
-          child.attr({
-            disabled: null,
-            readOnly: null
-          });
-          child.focus();
-        });
-        $(document).on('focusout','.h-cell', function(e) {
-            console.log('klop');
-          let parent = $(e.currentTarget).find('.h-cell-data');
-          let child = $(e.currentTarget).find('.h-cell-data-input');
-          child.css({
-            display: 'none',
-            width: '0',
-            height: '0'
-          });
-          child.attr({
-            disabled: 'disabled',
-            readOnly: 'readonly'
-          });
-          parent.css({
-            display: 'revert',
-            width: '100%',
-            height: '100%'
-          });
-          parent.attr({
-            disabled: null,
-            readOnly: null
-          });
-        });
-JS
-            , View::POS_END);
+        $view->registerJs("hGrid('$this->_requestUrl');");
         parent::run();
     }
 
@@ -83,13 +51,12 @@ JS
     public function renderTableBody()
     {
         $models = array_values($this->dataProvider->getModels());
-        if (!empty($models)) {
-            $this->primaryKeys = array_keys($models[0]->getPrimaryKey(true));
-        }
+
         $keys = $this->dataProvider->getKeys();
 
         $rows = [];
         foreach ($models as $index => $model) {
+            /* @var ActiveRecord $model */
             $key = $keys[$index];
             if ($this->beforeRow !== null) {
                 $row = call_user_func($this->beforeRow, $model, $key, $index, $this);
@@ -127,22 +94,26 @@ JS
      */
     public function renderTableRow($model, $key, $index): string
     {
-        $cells = [];
         /* @var $model ActiveRecord */
-        /* @var $column HGridColumn */
+
+        $cells = [];
 
         foreach ($this->columns as $column) {
 
+            /* @var $column HGridColumn */
+
             $column->contentOptions['class'] = 'h-cell';
-            $cells[] = $column->renderDataCell($model, $key, $index, $this->primaryKeys);
+
+            $cells[] = $column->renderDataCell($model, $key, $index);
+
         }
         if ($this->rowOptions instanceof Closure) {
             $options = call_user_func($this->rowOptions, $model, $key, $index, $this);
         } else {
             $options = $this->rowOptions;
         }
-        $options['data-key'] = is_array($key) ? json_encode($key) : (string)$key;
-        $options['h-data']['keys'] = $model->getPrimaryKey(true);
+//        $options['data-key'] = is_array($key) ? json_encode($key) : (string)$key;
+//        $options['h-data']['keys'] = $model->getPrimaryKey(true);
         return Html::tag('tr', implode('', $cells), $options);
     }
 
@@ -152,9 +123,12 @@ JS
      */
     protected function initColumns()
     {
+        $models = $this->dataProvider->getModels();
+
         if (empty($this->columns)) {
             $this->guessColumns();
         }
+
         foreach ($this->columns as $i => $column) {
             if (is_string($column)) {
                 //
@@ -164,6 +138,9 @@ JS
                     'class' => $this->dataColumnClass ?: HGridColumn::class,
                     'grid' => $this,
                 ], $column));
+            }
+            if ($column instanceof HGridColumn) {
+                $column = $this->extractRelationArray($column, $models);
             }
             if (!$column->visible) {
                 unset($this->columns[$i]);
@@ -178,17 +155,180 @@ JS
         if (!preg_match('/^([^:]+)(:(\w*))?(:(.*))?$/', $text, $matches)) {
             throw new InvalidConfigException('The column must be specified in the format of "attribute", "attribute:format" or "attribute:format:label"');
         }
-        $relation = null;
-        if (false !== strpos($matches[1], '.')) {
-            [$relation,] = explode('.', $matches[1]);
-        }
+
         return Yii::createObject([
             'class' => $this->dataColumnClass ?: HGridColumn::class,
             'grid' => $this,
-            'relation' => $relation,
             'attribute' => $matches[1],
             'format' => $matches[3] ?? 'text',
             'label' => $matches[5] ?? null,
         ]);
     }
+
+    /**
+     * Extracts the relational model if it is not null
+     * @param HGridColumn $column
+     * @param array $allModels
+     * @return HGridColumn
+     * @throws InvalidConfigException
+     */
+    private function createColumnWithNestedRelation(HGridColumn $column, array $allModels): HGridColumn
+    {
+        if (!empty($allModels)) {
+            $i = 0;
+            /* @var ActiveRecord $relationalModel */
+            $relationalModel = $allModels[$i];
+            if (false !== strpos($column->attribute, '.')) {
+                $attributeParts = explode('.', $column->attribute);
+                $neededAttribute = array_pop($attributeParts);
+                if (!empty($attributeParts) && !empty($neededAttribute)) {
+                    $count = count($allModels);
+                    reset($attributeParts);
+                    $relation = current($attributeParts);
+                    $modelClass = $relationalModel;
+                    while ($i < $count) {
+                        if ($relationalModel->isRelationPopulated($relation) && $relationalModel->$relation instanceof BaseActiveRecord) {
+                            $relationalModel = $relationalModel->$relation;
+                            $relation = next($attributeParts);
+                            if ($relation === false) {
+                                try {
+                                    $relationalModel = $relationalModel->getRelation(prev($attributeParts));
+                                } catch (Exception $e) {
+                                }
+                                /* @var $modelClass ActiveRecordInterface */
+                                $modelClass = $relationalModel::instance();
+                                break;
+                            }
+                        } else {
+                            $relation = prev($attributeParts);
+                            $relationalModel = $allModels[++$i];
+                        }
+                    }
+
+                    $column->setIsRelational(true);
+                    return $column->setRelation([
+                        'modelClass' => $modelClass,
+                        'formName' => $modelClass->formName(),
+                        'relation' => implode('.', $attributeParts),
+                        'modelToken' => Yii::$app->getSecurity()->maskToken(get_class($modelClass)),
+                        'attribute' => $neededAttribute,
+                        'primaryKey' => array_keys($relationalModel->getPrimaryKey(true)),
+                    ]);
+                }
+            } else {
+                $relationalModel = $relationalModel::instance();
+                $column->setIsRelational(false);
+                return $column->setRelation([
+                    'modelClass' => $relationalModel,
+                    'formName' => $relationalModel->formName(),
+                    'relation' => null,
+                    'modelToken' => Yii::$app->getSecurity()->maskToken(get_class($relationalModel)),
+                    'attribute' => $column->attribute,
+                    'primaryKey' => array_keys($relationalModel->getPrimaryKey(true)),
+                ]);
+            }
+        }
+        $column->setIsRelational(false);
+        return $column->setRelation([
+            'modelClass' => null,
+            'formName' => null,
+            'relation' => null,
+            'modelToken' => null,
+            'attribute' => null,
+            'primaryKey' => null,
+        ]);
+    }
+
+    /**
+     * @throws InvalidConfigException
+     */
+    protected function extractRelationArray(HGridColumn $column, array $allModels): HGridColumn
+    {
+        if (!empty($allModels)) {
+            $i = 0;
+            /* @var ActiveRecord $relationalModel */
+            $relationalModel = $allModels[$i];
+            if (false !== ($index = strrpos($column->attribute, '.'))) {
+                $relation = substr($column->attribute, 0, $index);
+                $_attribute = substr($column->attribute, $index + 1);
+
+                if (!empty($relation) && !empty($_attribute)) {
+                    /* @var ActiveRecord $relationalModel */
+                    $relationalModel = null;
+                    $count = count($allModels);
+                    while ($i < $count) {
+                        $relationalModel = ArrayHelper::getValue($allModels[$i], $relation);
+                        if (!empty($relationalModel)) {
+                            break;
+                        } else {
+                            $i++;
+                        }
+                    }
+                    $relationalModel = $relationalModel::instance();
+                    $column->setIsRelational(true);
+                    return $column->setRelation([
+                        'modelClass' => $relationalModel,
+                        'formName' => $relationalModel->formName(),
+                        'relation' => $relation,
+                        'modelToken' => Yii::$app->getSecurity()->maskToken(get_class($relationalModel)),
+                        'attribute' => $_attribute,
+                        'primaryKey' => array_keys($relationalModel->getPrimaryKey(true)),
+                    ]);
+                }
+            }
+
+            $column->setIsRelational(false);
+            return $column->setRelation([
+                'modelClass' => $relationalModel,
+                'formName' => $relationalModel->formName(),
+                'relation' => null,
+                'modelToken' => Yii::$app->getSecurity()->maskToken(get_class($relationalModel)),
+                'attribute' => $column->attribute,
+                'primaryKey' => array_keys($relationalModel->getPrimaryKey(true)),
+            ]);
+        }
+        $column->setIsRelational(false);
+        return $column->setRelation([
+            'modelClass' => null,
+            'formName' => null,
+            'relation' => null,
+            'modelToken' => null,
+            'attribute' => null,
+            'primaryKey' => null,
+        ]);
+    }
+    public function getAttributeLabel($attribute)
+    {
+        $labels = $this->attributeLabels();
+        if (isset($labels[$attribute])) {
+            return $labels[$attribute];
+        } elseif (strpos($attribute, '.')) {
+            $attributeParts = explode('.', $attribute);
+            $neededAttribute = array_pop($attributeParts);
+
+            $relatedModel = $this;
+            foreach ($attributeParts as $relationName) {
+                if ($relatedModel->isRelationPopulated($relationName) && $relatedModel->$relationName instanceof self) {
+                    $relatedModel = $relatedModel->$relationName;
+                } else {
+                    try {
+                        $relation = $relatedModel->getRelation($relationName);
+                    } catch (InvalidParamException $e) {
+                        return $this->generateAttributeLabel($attribute);
+                    }
+                    /* @var $modelClass ActiveRecordInterface */
+                    $modelClass = $relation->modelClass;
+                    $relatedModel = $modelClass::instance();
+                }
+            }
+
+            $labels = $relatedModel->attributeLabels();
+            if (isset($labels[$neededAttribute])) {
+                return $labels[$neededAttribute];
+            }
+        }
+
+        return $this->generateAttributeLabel($attribute);
+    }
+
 }

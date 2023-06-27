@@ -1,7 +1,8 @@
 <?php
-namespace iamhimansu\hgrid;
+namespace app\hgrid\src;
 
 use yii\web\AssetBundle;
+use yii\web\JqueryAsset;
 
 /**
  * Asset bundle for [[HGrid]] Widget.
@@ -11,15 +12,13 @@ use yii\web\AssetBundle;
  */
 class HGridAssets extends AssetBundle
 {
-    public $css = [
-    ];
+    public $css = ['css/style.css'];
 
-    public $js = [
-
-    ];
+    public $js = ['js/hgrid.js'];
 
     public $depends = [
-        'yii\web\YiiAsset'
+        'yii\web\YiiAsset',
+        'yii\web\JqueryAsset'
     ];
 
     public function __construct($config = [])
