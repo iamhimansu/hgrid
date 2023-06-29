@@ -30,7 +30,12 @@ class Models implements ModelsInterface
                             $modelClass = $validateClassPath::findOne($key);
                             $modelClass->load($model, '');
                             unset($model['classToken']);
-                            $_models[$modelClass->formName() . '[' . $key . ']'] = ['primaryModelClass' => $modelClass, 'modelClass' => $model];
+                            $_models[
+                                $modelClass->formName() . '[' . $key . ']'
+                            ] = [
+                                'primaryModelClass' => $modelClass,
+                                'modelClass' => $model
+                            ];
                         }
                     }
                 }
