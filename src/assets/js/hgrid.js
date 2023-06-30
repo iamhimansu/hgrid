@@ -42,33 +42,6 @@ function hGrid(requestUrl) {
 
         console.log('klop', child.val());
         //
-        child.css({
-            display: 'none',
-            width: '0',
-            height: '0'
-        });
-        child.attr({
-            disabled: 'disabled',
-            readOnly: 'readonly'
-        });
-        parent.css({
-            display: 'revert',
-            width: '100%',
-            height: '100%'
-        });
-        parent.attr({
-            disabled: null,
-            readOnly: null
-        });
-        checkboxParent.css({
-            display: 'none',
-            width: '0',
-            height: '0'
-        });
-        checkbox.attr({
-            disabled: 'disabled',
-            readOnly: 'readonly'
-        });
 
         const form = new FormData();
         let loader = undefined;
@@ -150,14 +123,43 @@ function hGrid(requestUrl) {
         });
 
 
-        ajaxProxy({
-            url: requestUrl,
-            method: 'post',
-            data: form,
-            processData: false,
-            contentType: false
-        });
+        if (!$(this).hasClass('has-error')) {
+            child.css({
+                display: 'none',
+                width: '0',
+                height: '0'
+            });
+            child.attr({
+                disabled: 'disabled',
+                readOnly: 'readonly'
+            });
+            parent.css({
+                display: 'revert',
+                width: '100%',
+                height: '100%'
+            });
+            parent.attr({
+                disabled: null,
+                readOnly: null
+            });
+            checkboxParent.css({
+                display: 'none',
+                width: '0',
+                height: '0'
+            });
+            checkbox.attr({
+                disabled: 'disabled',
+                readOnly: 'readonly'
+            });
 
+            ajaxProxy({
+                url: requestUrl,
+                method: 'post',
+                data: form,
+                processData: false,
+                contentType: false
+            });
+        }
     });
 
     //Added loader

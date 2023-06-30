@@ -130,7 +130,7 @@ class HGridColumn extends DataColumn
         if ($this->getRelation()['modelClass']->isAttributeRequired($this->getRelation()['attribute'])) {
             $this->contentOptions['class'] = "h-cell h-field-$inputId required";
         }
-        $grid->activeField->selectors['container'] = "h-field-$inputId";
+        $grid->activeField->selectors['container'] = ".h-field-$inputId";
         $clientOptions = $grid->activeField->getClientOptions();
         $options = $this->contentOptions;
 

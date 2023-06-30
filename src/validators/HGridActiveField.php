@@ -16,7 +16,6 @@ class HGridActiveField extends ActiveField
     private $_inputId;
     private $_name;
 
-
     /**
      * Returns the JS options for the field.
      * @return array the JS options.
@@ -55,14 +54,14 @@ class HGridActiveField extends ActiveField
         $options['id'] = $inputID ?: Html::getInputId($this->model, $this->attribute);
         $options['name'] = $this->getInputName();
 
-        $options['container'] = isset($this->selectors['container']) ? $this->selectors['container'] : ".field-$inputID";
-        $options['input'] = isset($this->selectors['input']) ? $this->selectors['input'] : "#$inputID";
+        $options['container'] = $this->selectors['container'] ?? ".field-$inputID";
+        $options['input'] = $this->selectors['input'] ?? "#$inputID";
         if (isset($this->selectors['error'])) {
             $options['error'] = $this->selectors['error'];
         } elseif (isset($this->errorOptions['class'])) {
             $options['error'] = '.' . implode('.', preg_split('/\s+/', $this->errorOptions['class'], -1, PREG_SPLIT_NO_EMPTY));
         } else {
-            $options['error'] = isset($this->errorOptions['tag']) ? $this->errorOptions['tag'] : 'span';
+            $options['error'] = $this->errorOptions['tag'] ?? 'span';
         }
 
         $options['encodeError'] = !isset($this->errorOptions['encode']) || $this->errorOptions['encode'];
@@ -73,7 +72,6 @@ class HGridActiveField extends ActiveField
             //todo fix grid validators
             $options[$name] = $this->$name === null ?/* $this->grid->$name*/ : $this->$name;
         }
-
         if (!empty($validators)) {
             $options['validate'] = new JsExpression('function (attribute, value, messages, deferred, $form) {' . implode('', $validators) . '}');
         }
@@ -99,7 +97,7 @@ class HGridActiveField extends ActiveField
      * @return bool
      * @since 2.0.11
      */
-    protected function isClientValidationEnabled()
+    protected function isClientValidationEnabled(): bool
     {
         return $this->enableClientValidation || $this->enableClientValidation === null && $this->grid->enableClientValidation;
     }
@@ -109,7 +107,7 @@ class HGridActiveField extends ActiveField
      * @return bool
      * @since 2.0.11
      */
-    protected function isAjaxValidationEnabled()
+    protected function isAjaxValidationEnabled(): bool
     {
         return $this->enableAjaxValidation || $this->enableAjaxValidation === null && $this->grid->enableAjaxValidation;
     }
@@ -119,7 +117,7 @@ class HGridActiveField extends ActiveField
      * @return string the input id.
      * @since 2.0.7
      */
-    protected function getInputId()
+    protected function getInputId(): string
     {
         return $this->_inputId ?: Html::getInputId($this->model, $this->attribute);
     }

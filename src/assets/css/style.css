@@ -1,9 +1,24 @@
-
+td.h-cell.required .h-cell-data:after {
+    content: " *";
+    color: red;
+}
+.h-cell-data-input-validating{
+    background: black;
+}
 .h-cell {
     position: relative;
     z-index: 100;
+    border: 2px solid transparent;
 }
 
+.h-cell.has-error {
+    background: #fff2f2;
+    border: 2px solid #ffc3c3;
+}
+
+.h-cell .help-block {
+    font-size: 10px;
+}
 @keyframes bounce {
     0%, 80%, 100% {
         transform: translateY(0);
