@@ -15,7 +15,6 @@ class Models implements ModelsInterface
     public static function load($postData): array
     {
         if (isset($postData['Models'])) {
-
             try {
                 $modelDatas = $postData['Models'];
                 $_models = [];

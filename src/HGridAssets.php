@@ -18,7 +18,7 @@ class HGridAssets extends AssetBundle
 
     public $depends = [
         'yii\web\YiiAsset',
-        'yii\web\JqueryAsset'
+        'yii\web\JqueryAsset',
     ];
 
     public function __construct($config = [])

@@ -79,9 +79,11 @@ class HGridColumn extends DataColumn
 
         $content = $this->renderDataCellContent($model, $key, $index);
         $contentRaw = $this->getDataCellValue($model, $key, $index);
+        $relationData = $this->getRelation();
+
         $uniqueId = $this->getUniqueId($model, $index);
-        $inputId = Html::getInputId($this->getRelation()['modelClass'], $this->getRelation()['attribute']) . "$key$columnIndex";
-        $inputName = $this->getRelation()['formName'] . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']';
+        $inputId = Html::getInputId($relationData['modelClass'], $relationData['attribute']) . "$key$columnIndex";
+        $inputName = $relationData['formName'] . '[' . $uniqueId . '][' . $relationData['attribute'] . ']';
 
         $inputOptions = [
             'style' => 'display:none;',
@@ -94,11 +96,11 @@ class HGridColumn extends DataColumn
             'tabindex' => 1,
             'name' => $inputName,
             'aria' => [
-                'required' => $this->getRelation()['modelClass']->isAttributeRequired($this->getRelation()['attribute']) ? 'true': 'false'
+                'required' => $relationData['modelClass']->isAttributeRequired($relationData['attribute']) ? 'true': 'false'
             ],
             'data' => [
-                'attribute' => $this->getRelation()['attribute'],
-                'model' => 'Models[' . $this->getRelation()['formName'] . '][' . $uniqueId . ']',
+                'attribute' => $relationData['attribute'],
+                'model' => 'Models[' . $relationData['formName'] . '][' . $uniqueId . ']',
                 'classToken' => $this->getModelToken(),
             ]
         ];
@@ -108,7 +110,7 @@ class HGridColumn extends DataColumn
                 if ($this->input instanceof Closure) {
                     $formInput = call_user_func($this->input, $model, $this->getRelation(), $key, $index, $this);
                 } else if (strtolower($this->format) === 'boolean' || strtolower($this->input) === 'boolean' || strtolower($this->input) === 'bool') {
-                    $formInput = Html::dropDownList($this->getRelation()['formName'], null, [
+                    $formInput = Html::dropDownList($relationData['formName'], null, [
                         null => 'Select',
                         1 => $this->grid->formatter->booleanFormat[1],
                         0 => $this->grid->formatter->booleanFormat[0],
@@ -122,12 +124,12 @@ class HGridColumn extends DataColumn
         $grid = $this->grid;
         /* @var HGrid $grid */
 
-        $grid->activeField->model = $this->getRelation()['modelClass'];
-        $grid->activeField->attribute = $this->getRelation()['attribute'];
+        $grid->activeField->model = $relationData['modelClass'];
+        $grid->activeField->attribute = $relationData['attribute'];
         $grid->activeField->setInputId($inputId);
         $grid->activeField->setInputName($inputName);
         $this->contentOptions['class'] = "h-cell h-field-$inputId";
-        if ($this->getRelation()['modelClass']->isAttributeRequired($this->getRelation()['attribute'])) {
+        if ($relationData['modelClass']->isAttributeRequired($relationData['attribute'])) {
             $this->contentOptions['class'] = "h-cell h-field-$inputId required";
         }
         $grid->activeField->selectors['container'] = ".h-field-$inputId";
@@ -140,8 +142,8 @@ class HGridColumn extends DataColumn
 
         if (empty($formInput)) {
             $formInput = Html::activeTextarea(
-                $this->getRelation()['modelClass'],
-                $this->getRelation()['attribute'],
+                $relationData['modelClass'],
+                $relationData['attribute'],
                 $inputOptions
             );
         }
@@ -150,7 +152,7 @@ class HGridColumn extends DataColumn
             'style' => 'display:none',
             'class' => 'hgrid-checkbox-parent'
         ]);
-        $setNull .= Html::checkbox($this->getRelation()['formName'] . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
+        $setNull .= Html::checkbox($relationData['formName'] . '[' . $uniqueId . '][' . $relationData['attribute'] . ']',
             false,
             [
                 'label' => 'NULL',
@@ -164,13 +166,13 @@ class HGridColumn extends DataColumn
         $errorBlock = '<div class="help-block"></div>';
 
         if (!empty($uniqueId = $this->getUniqueId($model, $index))) {
-            if ($this->getRelation()['attribute'] !== null &&
-                !in_array($this->getRelation()['attribute'], $this->getRelation()['primaryKey']) /*disable primary key update*/) {
-                $formName = $this->getRelation()['formName'];
+            if ($relationData['attribute'] !== null &&
+                !in_array($relationData['attribute'], $relationData['primaryKey']) /*disable primary key update*/) {
+                $formName = $relationData['formName'];
                 $span = Html::tag('span', $content, [
                     'class' => 'h-cell-data',
                     'data' => [
-                        'model-content' => $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']'
+                        'model-content' => $formName . '[' . $uniqueId . '][' . $relationData['attribute'] . ']'
                     ]
                 ]);
                 return Html::tag('td', $span . $formInput . $errorBlock . $setNull, $options);
@@ -201,12 +203,13 @@ class HGridColumn extends DataColumn
      */
     private function getUniqueId($model, $index = null): ?string
     {
+        $relationData = $this->getRelation();
         /* @var ActiveRecord $model */
         $keyValues = [];
-        if ($this->isRelational() && null !== ($relationalModel = $this->getRelation()['relation'])) {
+        if ($this->isRelational() && null !== ($relationalModel = $relationData['relation'])) {
             $model = ArrayHelper::getValue($model, $relationalModel);
         }
-        foreach ($this->getRelation()['primaryKey'] as $keyPart) {
+        foreach ($relationData['primaryKey'] as $keyPart) {
             if (isset($model->$keyPart)) {
                 $keyValues[] = $model->$keyPart;
             } else {
@@ -215,7 +218,7 @@ class HGridColumn extends DataColumn
             }
         }
 
-        return implode('', $keyValues);
+        return implode('___', $keyValues);
     }
 
     /**
@@ -249,7 +252,7 @@ class HGridColumn extends DataColumn
      */
     public function getModelToken()
     {
-        return $this->getRelation()['modelToken'] ?? null;
+        return $this->_relation['modelToken'] ?? null;
     }
 
     /**
@@ -257,7 +260,7 @@ class HGridColumn extends DataColumn
      */
     public function setModelToken(string $modelToken): void
     {
-        $this->$this->getRelation()['modelToken'] = $modelToken;
+        $this->_relation['modelToken'] = $modelToken;
     }
 
     /**
