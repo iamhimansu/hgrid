@@ -52,11 +52,12 @@ class RequestController extends Controller
                         'status' => 500,
                         'rowsAffected' => 0,
                         'message' => 'failed',
-                        'attributes' => null,
+                        'attributes' => $modelData['primaryModelClass']->getAttributes($attributesToUpdate),
                         'errors' => $e->getMessage()
                     ];
                 }
             }
+
             return $_responseData;
         }
     }

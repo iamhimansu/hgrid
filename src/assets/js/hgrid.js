@@ -1,6 +1,10 @@
-function hGrid(requestUrl) {
+function hGrid(id, requestUrl) {
+
+    let hGridContainer = $(id);
+    let hCurrentEditableTargetCell = undefined;
 
     $(document).on('dblclick', '.h-cell', function (e) {
+        hCurrentEditableTargetCell = $(e.target.closest('.h-cell'));
         // console.log([e.currentTarget]||e.target.parent());
         let parent = $(e.currentTarget).find('.h-cell-data');
         let child = $(e.currentTarget).find('.h-cell-data-input');
@@ -34,7 +38,6 @@ function hGrid(requestUrl) {
     });
 
     $(document).on('focusout', '.h-cell', function (e) {
-
         let parent = $(e.currentTarget).find('.h-cell-data');
         let child = $(e.currentTarget).find('.h-cell-data-input');
         let checkboxParent = $(e.currentTarget).find('.hgrid-checkbox-parent');
@@ -50,22 +53,22 @@ function hGrid(requestUrl) {
         form.append(child.data('model') + '[' + child.data('attribute') + ']', child.val());
 
         const ajaxProxy = new Proxy($.ajax, {
-            apply: function(target, thisArg, argumentsList) {
+            apply: function (target, thisArg, argumentsList) {
                 const [options] = argumentsList;
-                options.beforeSend = function() {
+                options.beforeSend = function () {
                     loader = attachLoader(parent.parent(), loaderContainer);
                 };
 
-                options.success = function(response) {
+                options.success = function (response) {
                     const responseProxy = new Proxy(response, {
-                        get: function(target, property, receiver) {
+                        get: function (target, property, receiver) {
                             if (typeof target[property] === 'object' && target[property] !== null) {
                                 return new Proxy(target[property], this);
                             } else {
                                 return target[property];
                             }
                         },
-                        set: function(target, property, value, receiver) {
+                        set: function (target, property, value, receiver) {
                             target[property] = value;
                             return true;
                         },
@@ -86,7 +89,7 @@ function hGrid(requestUrl) {
                                             const parent = dataModelInput.parent('.h-cell');
                                             dataModelInput.val(value);
                                             dataModelContent.text(value);
-                                            if(typeof parent !== 'undefined'){
+                                            if (typeof parent !== 'undefined') {
                                                 console.log(responseProxy[parentKey].rowsAffected)
                                                 $(parent).data('toggle', 'popover')
                                                 $(parent).data('content', responseProxy[parentKey].rowsAffected)
@@ -108,20 +111,19 @@ function hGrid(requestUrl) {
                     }
                 };
 
-                options.error = function(xhr, status, error) {
+                options.error = function (xhr, status, error) {
                     console.error(xhr, status, error);
                 };
 
                 const ajaxPromise = target.apply(thisArg, argumentsList);
                 //
-                ajaxPromise.always(function(e) {
+                ajaxPromise.always(function (e) {
                     loader.remove();
                 });
 
                 return ajaxPromise;
             },
         });
-
 
         if (!$(this).hasClass('has-error')) {
             child.css({
@@ -160,6 +162,7 @@ function hGrid(requestUrl) {
                 contentType: false
             });
         }
+        // $(this).trigger('click');
     });
 
     //Added loader

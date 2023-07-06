@@ -15,6 +15,15 @@ class HGridActiveField extends ActiveField
     public $grid;
     private $_inputId;
     private $_name;
+    private $_errorBlock;
+
+    public function __construct($config = [])
+    {
+        $this->_errorBlock = Html::tag('div', null, [
+            'class' => 'help-block'
+        ]);
+        parent::__construct($config);
+    }
 
     /**
      * Returns the JS options for the field.
@@ -127,17 +136,21 @@ class HGridActiveField extends ActiveField
         $this->_inputId = $id;
     }
 
-    public function setInputName($name)
-    {
-        $this->_name = $name;
-    }
-
     public function getInputName()
     {
-        if (empty($this->_name)){
+        if (empty($this->_name)) {
             $this->_name = $this->attribute;
         }
         return $this->_name;
     }
 
+    public function setInputName($name)
+    {
+        $this->_name = $name;
+    }
+
+    public function getErrorBlock()
+    {
+        return $this->_errorBlock;
+    }
 }

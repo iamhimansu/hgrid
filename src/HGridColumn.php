@@ -5,13 +5,16 @@ namespace app\hgrid\src;
 use app\hgrid\src\helpers\Obfuscator;
 use Closure;
 use Exception;
+use stdClass;
 use yii\base\InvalidConfigException;
 use yii\db\ActiveRecord;
 use yii\grid\DataColumn;
 use yii\helpers\ArrayHelper;
 use yii\helpers\Html;
-use yii\widgets\ActiveField;
 
+/**
+ * @property HGrid $grid
+ */
 class HGridColumn extends DataColumn
 {
     const DEFAULT_INPUT_TYPE = 'text';
@@ -28,7 +31,14 @@ class HGridColumn extends DataColumn
      */
     public $input = null;
     /**
-     * @var array Takes the configurations for displaying or wrapping the data if no relation is found.
+     * Contains the input checkbox for setting null value
+     *
+     * @var null
+     */
+    public $nullInput = null;
+    /**
+     * @var array $noRelationOptions
+     * Takes the configurations for displaying or wrapping the data if no relation is found.
      *  [
      *      'tag' => 'a',
      *      'options' => [
@@ -37,24 +47,39 @@ class HGridColumn extends DataColumn
      *  ]
      */
     public $noRelationOptions = [];
-
+    private $_nullInput = [];
     /**
      * @var string $_noRelationHtml
      */
     private $_noRelationHtml;
     /**
-     * @var $relation array
+     * @var stdClass $relation
      * holds the relation for the given column if it is a related record
      */
-    private array $_relation;
+    private stdClass $_relation;
+
     private bool $_isRelational;
 
     public function __construct($config = [])
     {
-        parent::__construct($config);
         if (empty($this->noRelationOptions)) {
             //TODO: Create no relational html once per column
         }
+
+        /**
+         * Holds default array for creating NULL inputs
+         */
+        if (empty($this->_nullInput) && $this->nullInput !== false) {
+            $this->_nullInput = [
+                Html::beginTag('div', [
+                    'style' => 'display:none',
+                    'class' => 'hgrid-checkbox-parent'
+                ]),
+                null,
+                Html::endTag('div')
+            ];
+        }
+        parent::__construct($config);
     }
 
     /**
@@ -68,7 +93,6 @@ class HGridColumn extends DataColumn
      */
     public function renderDataCell($model, $key, $index, $columnIndex = null): string
     {
-
         /* @var $model ActiveRecord */
 
         if ($this->contentOptions instanceof Closure) {
@@ -78,108 +102,76 @@ class HGridColumn extends DataColumn
         }
 
         $content = $this->renderDataCellContent($model, $key, $index);
-        $contentRaw = $this->getDataCellValue($model, $key, $index);
-        $relationData = $this->getRelation();
 
-        $uniqueId = $this->getUniqueId($model, $index);
-        $inputId = Html::getInputId($relationData['modelClass'], $relationData['attribute']) . "$key$columnIndex";
-        $inputName = $relationData['formName'] . '[' . $uniqueId . '][' . $relationData['attribute'] . ']';
+        $relationalData = $this->getRelation();
+
+        $uniqueId = $this->getUniqueRecordId($model);
+
+        $isRequired = $relationalData->modelClass->isAttributeRequired($relationalData->attribute);
+
+        $inputId = Html::getInputId(
+                $relationalData->modelClass,
+                $relationalData->attribute
+            ) . "$key$columnIndex";
+
+        $inputName = "$relationalData->formName[$uniqueId][$relationalData->attribute]";
+
+        $this->_relation->name = $inputName;
+        $this->_relation->id = $inputId;
+        $this->_relation->data->attribute = $relationalData->attribute;
+        $this->_relation->data->model = "Models[$relationalData->formName][$uniqueId]";
+        $this->_relation->data->classToken = $this->getModelToken();
 
         $inputOptions = [
-            'style' => 'display:none;',
-            'id' => $inputId,
-            'class' => 'h-cell-data-input',
-            'disabled' => 'disabled',
-            'readonly' => 'readonly',
-            'value' => $contentRaw,
-            'autofocus' => true,
-            'tabindex' => 1,
             'name' => $inputName,
-            'aria' => [
-                'required' => $relationData['modelClass']->isAttributeRequired($relationData['attribute']) ? 'true': 'false'
-            ],
-            'data' => [
-                'attribute' => $relationData['attribute'],
-                'model' => 'Models[' . $relationData['formName'] . '][' . $uniqueId . ']',
-                'classToken' => $this->getModelToken(),
-            ]
+            'id' => $inputId,
+            'value' => $this->getDataCellValue($model, $key, $index)
         ];
-        $formInput = null;
-        if (!empty($uniqueId)) {
-            if (!empty($this->input)) {
-                if ($this->input instanceof Closure) {
-                    $formInput = call_user_func($this->input, $model, $this->getRelation(), $key, $index, $this);
-                } else if (strtolower($this->format) === 'boolean' || strtolower($this->input) === 'boolean' || strtolower($this->input) === 'bool') {
-                    $formInput = Html::dropDownList($relationData['formName'], null, [
-                        null => 'Select',
-                        1 => $this->grid->formatter->booleanFormat[1],
-                        0 => $this->grid->formatter->booleanFormat[0],
-                    ], $inputOptions);
-                } else if (is_string($this->input)) {
-                    $formInput = $this->input;
-                }
-            }
-        }
 
-        $grid = $this->grid;
-        /* @var HGrid $grid */
+        $input = $this->renderInput(
+            $model,
+            $relationalData,
+            $key,
+            $index,
+            $columnIndex,
+            $uniqueId,
+            $isRequired,
+            $inputOptions);
 
-        $grid->activeField->model = $relationData['modelClass'];
-        $grid->activeField->attribute = $relationData['attribute'];
-        $grid->activeField->setInputId($inputId);
-        $grid->activeField->setInputName($inputName);
-        $this->contentOptions['class'] = "h-cell h-field-$inputId";
-        if ($relationData['modelClass']->isAttributeRequired($relationData['attribute'])) {
-            $this->contentOptions['class'] = "h-cell h-field-$inputId required";
+        $data = [Html::tag('span', $content, [
+            'class' => 'h-cell-data',
+            'data' => [
+                'model-content' => "$relationalData->formName[$uniqueId][$relationalData->attribute]"
+            ]
+        ])];
+
+        $this->grid->activeField->model = $relationalData->modelClass;
+        $this->grid->activeField->attribute = $relationalData->attribute;
+        $this->grid->activeField->setInputId($inputId);
+        $this->grid->activeField->setInputName($inputName);
+
+        $options['class'] = "h-cell h-field-$inputId" . ($options['class'] ?? '');
+        if ($isRequired) {
+            $options['class'] = "h-cell h-field-$inputId required {$options['class']}";
         }
-        $grid->activeField->selectors['container'] = ".h-field-$inputId";
-        $clientOptions = $grid->activeField->getClientOptions();
-        $options = $this->contentOptions;
+        $this->grid->activeField->selectors['container'] = ".h-field-$inputId";
+        $clientOptions = $this->grid->activeField->getClientOptions();
 
         if (!empty($clientOptions)) {
-            $grid->attributes[] = $clientOptions;
+            $this->grid->attributes[] = $clientOptions;
         }
 
-        if (empty($formInput)) {
-            $formInput = Html::activeTextarea(
-                $relationData['modelClass'],
-                $relationData['attribute'],
-                $inputOptions
-            );
-        }
-
-        $setNull = Html::beginTag('div', [
-            'style' => 'display:none',
-            'class' => 'hgrid-checkbox-parent'
-        ]);
-        $setNull .= Html::checkbox($relationData['formName'] . '[' . $uniqueId . '][' . $relationData['attribute'] . ']',
-            false,
-            [
-                'label' => 'NULL',
-                'value' => 1, // The value to be submitted when the checkbox is checked
-                'class' => 'hgrid-checkbox', // CSS class for styling
-                'disabled' => 'disabled',
-                'readonly' => 'true'
-            ]);
-        $setNull .= Html::endTag('div');
-
-        $errorBlock = '<div class="help-block"></div>';
-
-        if (!empty($uniqueId = $this->getUniqueId($model, $index))) {
-            if ($relationData['attribute'] !== null &&
-                !in_array($relationData['attribute'], $relationData['primaryKey']) /*disable primary key update*/) {
-                $formName = $relationData['formName'];
-                $span = Html::tag('span', $content, [
-                    'class' => 'h-cell-data',
-                    'data' => [
-                        'model-content' => $formName . '[' . $uniqueId . '][' . $relationData['attribute'] . ']'
-                    ]
-                ]);
-                return Html::tag('td', $span . $formInput . $errorBlock . $setNull, $options);
+        if (!empty($this->getRelation()->modelClass) &&
+            !empty($this->getUniqueRecordId($model)) &&
+            null !== $relationalData->attribute
+        ) {
+            if (!in_array($relationalData->attribute, $relationalData->primaryKey)) {
+                $data[] = $input;
+                return Html::tag('td', implode('', $data), $options);
             }
         } else {
             if ($this->isRelational()) {
-                $info = Html::beginTag('a', [
+                $noRelation = Html::tag('a', $content, [
                     'href' => 'javascript:void(0)',
                     'style' => 'white-space: nowrap',
                     'class' => 'link-body-emphasis',
@@ -190,26 +182,43 @@ class HGridColumn extends DataColumn
                         'title' => 'No relation found.'
                     ]
                 ]);
-                $info .= $content;
-                $info .= Html::endTag('a');
-                return Html::tag('td', $info, $options);
+                $options = [];
+                return Html::tag('td', $noRelation, $options);
             }
         }
         return Html::tag('td', $content, $options);
     }
 
     /**
+     * @return object
+     */
+    public function getRelation(): stdClass
+    {
+        return $this->_relation;
+    }
+
+    /**
+     * @param stdClass $relation
+     * @return HGridColumn
+     */
+    public function setRelation(stdClass $relation): HGridColumn
+    {
+        $this->_relation = $relation;
+        return $this;
+    }
+
+    /**
      * @throws Exception
      */
-    private function getUniqueId($model, $index = null): ?string
+    private function getUniqueRecordId($model): ?string
     {
         $relationData = $this->getRelation();
         /* @var ActiveRecord $model */
         $keyValues = [];
-        if ($this->isRelational() && null !== ($relationalModel = $relationData['relation'])) {
+        if ($this->isRelational() && null !== ($relationalModel = $relationData->relation)) {
             $model = ArrayHelper::getValue($model, $relationalModel);
         }
-        foreach ($relationData['primaryKey'] as $keyPart) {
+        foreach ($relationData->primaryKey as $keyPart) {
             if (isset($model->$keyPart)) {
                 $keyValues[] = $model->$keyPart;
             } else {
@@ -230,29 +239,81 @@ class HGridColumn extends DataColumn
     }
 
     /**
-     * @return array
-     */
-    public function getRelation(): array
-    {
-        return $this->_relation;
-    }
-
-    /**
-     * @param array $relation
-     * @return HGridColumn
-     */
-    public function setRelation(array $relation): HGridColumn
-    {
-        $this->_relation = $relation;
-        return $this;
-    }
-
-    /**
      * @return mixed|null
      */
     public function getModelToken()
     {
-        return $this->_relation['modelToken'] ?? null;
+        return $this->_relation->modelToken ?? null;
+    }
+
+    private function renderInput($model, $relationalData, $key, $index, $columnIndex, $uniqueId, $isRequired, $options = [])
+    {
+        $errorBlock = $this->grid->activeField->getErrorBlock();
+        $nullInput = '';
+        $_options = [
+            'autofocus' => true,
+            'class' => 'h-cell-data-input',
+            'data' => [
+                'attribute' => $relationalData->attribute,
+                'model' => "Models[$relationalData->formName][$uniqueId]",
+                'classToken' => $this->getModelToken(),
+            ],
+            'disabled' => 'disabled',
+            'id' => null,
+            'name' => null,
+            'readonly' => 'readonly',
+            'style' => 'display:none;',
+            'tabindex' => 1,
+            'value' => null,
+        ];
+
+        $_options = array_replace_recursive($_options, $options);
+        //
+        if (!$isRequired) {
+            $nullInput = $this->createNullInput(
+                $relationalData->formName,
+                $uniqueId,
+                $relationalData->attribute
+            );
+        }
+
+        if ($this->input instanceof Closure) {
+            return call_user_func($this->input, $model, $relationalData, $key, $index, $this) . $errorBlock;
+        }
+        if (strtolower($this->input) === 'boolean' || strtolower($this->input) === 'bool') {
+            return Html::dropDownList($relationalData->formName, null, [
+                    null => 'Select',
+                    1 => $this->grid->formatter->booleanFormat[1],
+                    0 => $this->grid->formatter->booleanFormat[0],
+                ], $_options) . $errorBlock . $nullInput;
+        }
+
+        return Html::textarea(
+                $relationalData->formName,
+                $_options['value'],
+                $_options
+            ) . $errorBlock . $nullInput;
+
+    }
+
+    /**
+     * @param $formName
+     * @param $recordId
+     * @param $attribute
+     * @return string
+     */
+    private function createNullInput($formName, $recordId, $attribute)
+    {
+        $this->_nullInput[1] = Html::checkbox($formName . '[' . $recordId . '][' . $attribute . ']',
+            false,
+            [
+                'label' => 'Set NULL',
+                'value' => 1, // The value to be submitted when the checkbox is checked
+                'class' => 'hgrid-checkbox', // CSS class for styling
+                'disabled' => 'disabled',
+                'readonly' => 'true',
+            ]);
+        return implode('', $this->_nullInput);
     }
 
     /**
@@ -260,7 +321,7 @@ class HGridColumn extends DataColumn
      */
     public function setModelToken(string $modelToken): void
     {
-        $this->_relation['modelToken'] = $modelToken;
+        $this->_relation->modelToken = $modelToken;
     }
 
     /**
@@ -271,50 +332,4 @@ class HGridColumn extends DataColumn
         $this->_isRelational = $isRelational;
     }
 
-    protected function createFormInput($formName, $key, $index, $cellValue, $uniqueId)
-    {
-        $inputOptions = [
-            'style' => 'display:none;',
-            'class' => 'h-cell-data-input',
-            'disabled' => 'disabled',
-            'autofocus' => true,
-            'tabindex' => 1,
-            'name' => $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
-            'data' => [
-                'attribute' => $this->getRelation()['attribute'],
-                'model' => 'Models[' . $formName . '][' . $uniqueId . ']',
-                'classToken' => $this->getModelToken(),
-            ]
-        ];
-
-        $formInput = strtolower($this->formInput);
-
-        if (!in_array(strtolower($formInput), ['textarea'], true)) {
-            $input = Html::input(
-                $formInput,
-                $formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
-                $cellValue,
-                $inputOptions
-            );
-        } else {
-            $input = Html::beginTag($formInput, $inputOptions);
-            $input .= $cellValue;
-            $input .= Html::endTag($formInput);
-        }
-        $setNull = Html::beginTag('div', [
-            'style' => 'display:none',
-            'class' => 'hgrid-checkbox-parent'
-        ]);
-        $setNull .= Html::checkbox($formName . '[' . $uniqueId . '][' . $this->getRelation()['attribute'] . ']',
-            false,
-            [
-                'label' => 'NULL',
-                'value' => 1, // The value to be submitted when the checkbox is checked
-                'class' => 'hgrid-checkbox', // CSS class for styling
-                'disabled' => 'disabled',
-                'readonly' => 'true'
-            ]);
-        $setNull .= Html::endTag('div');
-        return $input . $setNull;
-    }
 }
